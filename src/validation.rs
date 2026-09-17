@@ -1,134 +1,72 @@
-//! Validation module for avatar skeleton and mesh integrity
-
 use crate::bone::{Bone, BoneHierarchy};
 use crate::error::AvatarResult;
+use std::fs;
+use std::path::Path;
 
-/// Validation result with details
-#[derive(Debug, Clone)]
-pub struct ValidationReport {
-    /// Whether validation passed
-    pub is_valid: bool,
-
-    /// List of errors found
-    pub errors: Vec<String>,
-
-    /// List of warnings
-    pub warnings: Vec<String>,
-
-    /// Statistics
-    pub stats: ValidationStats,
+pub fn export_bone_to_json<P: AsRef<Path>>(bone: &Bone, path: P) -> AvatarResult<()> {
+    let json = serde_json::to_string_pretty(bone)?;
+    fs::write(path, json)?;
+    Ok(())
 }
 
-/// Validation statistics
-#[derive(Debug, Clone)]
-pub struct ValidationStats {
-    /// Total bones
-    pub bone_count: usize,
-
-    /// Root bones
-    pub root_count: usize,
-
-    /// Bones with no children
-    pub leaf_count: usize,
-
-    /// Bones with multiple children
-    pub branch_count: usize,
+pub fn import_bone_from_json<P: AsRef<Path>>(path: P) -> AvatarResult<Bone> {
+    let content = fs::read_to_string(path)?;
+    let bone: Bone = serde_json::from_str(&content)?;
+    Ok(bone)
 }
 
-/// Validates a bone hierarchy
-pub fn validate_hierarchy(hierarchy: &BoneHierarchy) -> ValidationReport {
-    let mut errors = Vec::new();
-    let mut warnings = Vec::new();
+pub fn export_bones_individually<P: AsRef<Path>>(
+    hierarchy: &BoneHierarchy,
+    dir: P,
+) -> AvatarResult<()> {
+    let dir = dir.as_ref();
+    fs::create_dir_all(dir)?;
 
-    // Check for orphaned bones
-    for (bone_id, bone) in &hierarchy.bones {
-        if let Some(parent_id) = &bone.parent_id {
-            if !hierarchy.bones.contains_key(parent_id) {
-                errors.push(format!(
-                    "Bone '{}' references non-existent parent '{}'",
-                    bone_id, parent_id
-                ));
-            }
-        }
+    for bone in hierarchy.bones.values() {
+        let file = dir.join(format!("{}.json", bone.id));
+        export_bone_to_json(bone, file)?;
     }
 
-    // Check for circular references
-    for (bone_id, _) in &hierarchy.bones {
-        if has_circular_reference(hierarchy, bone_id) {
-            errors.push(format!("Circular reference detected in bone '{}'", bone_id));
-        }
-    }
+    let meta = serde_json::to_string_pretty(hierarchy)?;
+    fs::write(dir.join("_hierarchy.json"), meta)?;
+    Ok(())
+}
 
-    // Verify root bones
-    if hierarchy.root_ids.is_empty() {
-        warnings.push("Hierarchy has no root bones".to_string());
-    }
-
-    // Calculate statistics
-    let root_count = hierarchy.root_ids.len();
-    let bone_count = hierarchy.bones.len();
-    let leaf_count = hierarchy
-        .bones
-        .values()
-        .filter(|bone| hierarchy.get_children(&bone.id).is_empty())
-        .count();
-    let branch_count = hierarchy
-        .bones
-        .values()
-        .filter(|bone| hierarchy.get_children(&bone.id).len() > 1)
-        .count();
-
-    let stats = ValidationStats {
-        bone_count,
-        root_count,
-        leaf_count,
-        branch_count,
+pub fn import_bones_individually<P: AsRef<Path>>(path: P) -> AvatarResult<BoneHierarchy> {
+    let path = path.as_ref();
+    let meta_path = path.join("_hierarchy.json");
+    let hierarchy: BoneHierarchy = if meta_path.exists() {
+        let content = fs::read_to_string(meta_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        BoneHierarchy::new("Imported Hierarchy".to_string())
     };
 
-    let is_valid = errors.is_empty();
-
-    ValidationReport {
-        is_valid,
-        errors,
-        warnings,
-        stats,
-    }
-}
-
-/// Checks if there's a circular reference in the hierarchy
-fn has_circular_reference(hierarchy: &BoneHierarchy, start_id: &str) -> bool {
-    let mut visited = std::collections::HashSet::new();
-    let mut stack = vec![start_id.to_string()];
-
-    while let Some(current) = stack.pop() {
-        if visited.contains(&current) {
-            return true; // Circular reference found
-        }
-        visited.insert(current.clone());
-
-        if let Some(bone) = hierarchy.get_bone(&current) {
-            if let Some(parent_id) = &bone.parent_id {
-                stack.push(parent_id.clone());
+    let mut imported = hierarchy;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() && entry.file_name().to_string_lossy().ends_with(".json") {
+            let name = entry.file_name();
+            if name == "_hierarchy.json" {
+                continue;
             }
+            let bone: Bone = import_bone_from_json(entry.path())?;
+            imported.bones.insert(bone.id.clone(), bone);
         }
     }
 
-    false
+    Ok(imported)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bone::{Bone, BoneType};
+pub fn export_bone_to_binary<P: AsRef<Path>>(bone: &Bone, path: P) -> AvatarResult<()> {
+    let bytes = serde_json::to_vec(bone)?;
+    fs::write(path, bytes)?;
+    Ok(())
+}
 
-    #[test]
-    fn test_valid_hierarchy() {
-        let mut hierarchy = BoneHierarchy::new("Test".to_string());
-        let bone = Bone::new("Root".to_string(), None, BoneType::Armature);
-        hierarchy.add_bone(bone);
-
-        let report = validate_hierarchy(&hierarchy);
-        assert!(report.is_valid);
-        assert_eq!(report.stats.bone_count, 1);
-    }
+pub fn import_bone_from_binary<P: AsRef<Path>>(path: P) -> AvatarResult<Bone> {
+    let bytes = fs::read(path)?;
+    let bone: Bone = serde_json::from_slice(&bytes)?;
+    Ok(bone)
 }

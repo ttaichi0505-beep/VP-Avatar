@@ -1,273 +1,271 @@
-//! Avatar struct and utilities for handling VRM files
+//! Validation module for avatar skeleton and mesh integrity
 
-use crate::bone::BoneHierarchy;
-use crate::error::AvatarResult;
-use crate::material::Material;
-use crate::mesh::Mesh;
-use crate::pose::Pose;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::Path;
+use crate::bone::{Bone, BoneHierarchy};
+use crate::error::{AvatarError, AvatarResult};
 
-/// Represents a VRM avatar loaded from VRoid
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Avatar {
-    /// Name of the avatar
-    pub name: String,
-
-    /// Version of the VRM format
-    pub vrm_version: String,
-
-    /// Avatar metadata
-    pub metadata: AvatarMetadata,
-
-    /// Bone skeleton structure
-    pub skeleton: Option<BoneHierarchy>,
-
-    /// Meshes in the avatar
-    pub meshes: HashMap<String, Mesh>,
-
-    /// Materials used by meshes
-    pub materials: HashMap<String, Material>,
-
-    /// Available poses
-    pub poses: HashMap<String, Pose>,
-}
-
-/// Metadata associated with a VRM avatar
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvatarMetadata {
-    /// Author/creator of the avatar
-    pub author: Option<String>,
-
-    /// Version of the avatar
-    pub version: Option<String>,
-
-    /// License information
-    pub license: Option<String>,
-
-    /// Additional information
-    pub info: Option<String>,
-
-    /// Custom properties
-    pub custom_properties: HashMap<String, String>,
-}
-
-impl Avatar {
-    /// Creates a new Avatar instance
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            vrm_version: "0.0".to_string(),
-            metadata: AvatarMetadata {
-                author: None,
-                version: None,
-                license: None,
-                info: None,
-                custom_properties: HashMap::new(),
-            },
-            skeleton: None,
-            meshes: HashMap::new(),
-            materials: HashMap::new(),
-            poses: HashMap::new(),
-        }
-    }
-
-    /// Loads a VRM avatar from a file path
-    pub fn load<P: AsRef<Path>>(path: P) -> AvatarResult<Self> {
-        let _path = path.as_ref();
-        // TODO: Implement VRM file loading
-        Err(crate::error::AvatarError::LoadError(
-            "VRM loading not yet implemented".to_string(),
-        ))
-    }
-
-    /// Sets the author of the avatar
-    pub fn set_author(&mut self, author: String) {
-        self.metadata.author = Some(author);
-    }
-
-    /// Sets the version of the avatar
-    pub fn set_version(&mut self, version: String) {
-        self.metadata.version = Some(version);
-    }
-
-    /// Sets the skeleton/bone hierarchy
-    pub fn set_skeleton(&mut self, skeleton: BoneHierarchy) {
-        self.skeleton = Some(skeleton);
-    }
-
-    /// Gets a reference to the skeleton
-    pub fn get_skeleton(&self) -> Option<&BoneHierarchy> {
-        self.skeleton.as_ref()
-    }
-
-    /// Gets a mutable reference to the skeleton
-    pub fn get_skeleton_mut(&mut self) -> Option<&mut BoneHierarchy> {
-        self.skeleton.as_mut()
-    }
-
-    /// Adds a mesh to the avatar
-    pub fn add_mesh(&mut self, mesh: Mesh) {
-        self.meshes.insert(mesh.id.clone(), mesh);
-    }
-
-    /// Gets a mesh by ID
-    pub fn get_mesh(&self, mesh_id: &str) -> Option<&Mesh> {
-        self.meshes.get(mesh_id)
-    }
-
-    /// Gets a mutable mesh by ID
-    pub fn get_mesh_mut(&mut self, mesh_id: &str) -> Option<&mut Mesh> {
-        self.meshes.get_mut(mesh_id)
-    }
-
-    /// Adds a material to the avatar
-    pub fn add_material(&mut self, material: Material) {
-        self.materials.insert(material.id.clone(), material);
-    }
-
-    /// Gets a material by ID
-    pub fn get_material(&self, material_id: &str) -> Option<&Material> {
-        self.materials.get(material_id)
-    }
-
-    /// Gets a mutable material by ID
-    pub fn get_material_mut(&mut self, material_id: &str) -> Option<&mut Material> {
-        self.materials.get_mut(material_id)
-    }
-
-    /// Adds a pose to the avatar
-    pub fn add_pose(&mut self, pose: Pose) {
-        self.poses.insert(pose.name.clone(), pose);
-    }
-
-    /// Gets a pose by name
-    pub fn get_pose(&self, pose_name: &str) -> Option<&Pose> {
-        self.poses.get(pose_name)
-    }
-
-    /// Gets a mutable pose by name
-    pub fn get_pose_mut(&mut self, pose_name: &str) -> Option<&mut Pose> {
-        self.poses.get_mut(pose_name)
-    }
-
-    /// Sets a custom property
-    pub fn set_property(&mut self, key: String, value: String) {
-        self.metadata.custom_properties.insert(key, value);
-    }
-
-    /// Gets summary statistics
-    pub fn get_statistics(&self) -> AvatarStatistics {
-        AvatarStatistics {
-            mesh_count: self.meshes.len(),
-            material_count: self.materials.len(),
-            bone_count: self.skeleton.as_ref().map(|s| s.bone_count()).unwrap_or(0),
-            pose_count: self.poses.len(),
-            total_vertices: self.meshes.values().map(|m| m.vertex_count()).sum(),
-            total_faces: self.meshes.values().map(|m| m.face_count()).sum(),
-        }
-    }
-}
-
-/// Avatar statistics
+/// Validation result with details
 #[derive(Debug, Clone)]
-pub struct AvatarStatistics {
-    /// Number of meshes
-    pub mesh_count: usize,
+pub struct ValidationReport {
+    pub is_valid: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub stats: ValidationStats,
+}
 
-    /// Number of materials
-    pub material_count: usize,
-
-    /// Number of bones
+#[derive(Debug, Clone)]
+pub struct ValidationStats {
     pub bone_count: usize,
+    pub root_count: usize,
+    pub leaf_count: usize,
+    pub branch_count: usize,
+}
 
-    /// Number of poses
-    pub pose_count: usize,
+pub fn validate_gltf_2_0_bytes(bytes: &[u8]) -> AvatarResult<()> {
+    if bytes.is_empty() {
+        return Err(AvatarError::InvalidFormat("input is empty".to_string()));
+    }
 
-    /// Total vertices across all meshes
-    pub total_vertices: usize,
+    if bytes.starts_with(b"glTF") {
+        validate_glb_bytes(bytes)
+    } else {
+        validate_json_gltf_bytes(bytes)
+    }
+}
 
-    /// Total faces across all meshes
-    pub total_faces: usize,
+fn validate_glb_bytes(bytes: &[u8]) -> AvatarResult<()> {
+    if bytes.len() < 12 {
+        return Err(AvatarError::InvalidFormat(
+            "GLB input is shorter than the required 12-byte header".to_string(),
+        ));
+    }
+
+    if &bytes[0..4] != b"glTF" {
+        return Err(AvatarError::InvalidFormat(
+            "invalid GLB magic, expected 'glTF'".to_string(),
+        ));
+    }
+
+    let version = u32::from_le_bytes(
+        bytes[4..8]
+            .try_into()
+            .map_err(|_| AvatarError::InvalidFormat("GLB header is truncated".to_string()))?,
+    );
+    if version != 2 {
+        return Err(AvatarError::InvalidFormat(format!(
+            "unsupported GLB version: {version}; expected 2"
+        )));
+    }
+
+    let total_length = u32::from_le_bytes(
+        bytes[8..12]
+            .try_into()
+            .map_err(|_| AvatarError::InvalidFormat("GLB totalLength is truncated".to_string()))?,
+    ) as usize;
+    if total_length != bytes.len() {
+        return Err(AvatarError::InvalidFormat(format!(
+            "GLB totalLength mismatch: file size is {}, header says {}",
+            bytes.len(),
+            total_length
+        )));
+    }
+
+    let mut offset = 12usize;
+    let mut saw_json = false;
+    let mut json_chunk_start = None;
+    let mut json_chunk_end = None;
+
+    while offset + 8 <= bytes.len() {
+        let chunk_length = u32::from_le_bytes(
+            bytes[offset..offset + 4]
+                .try_into()
+                .map_err(|_| AvatarError::InvalidFormat("chunk length is truncated".to_string()))?,
+        ) as usize;
+        let chunk_type = &bytes[offset + 4..offset + 8];
+
+        let chunk_data_start = offset
+            .checked_add(8)
+            .ok_or_else(|| AvatarError::InvalidFormat("chunk offset overflow".to_string()))?;
+        let chunk_data_end = chunk_data_start
+            .checked_add(chunk_length)
+            .ok_or_else(|| AvatarError::InvalidFormat("chunk length overflow".to_string()))?;
+
+        if chunk_data_end > bytes.len() {
+            return Err(AvatarError::InvalidFormat(
+                "GLB chunk extends beyond file size".to_string(),
+            ));
+        }
+
+        if chunk_type == b"JSON" {
+            saw_json = true;
+            json_chunk_start = Some(chunk_data_start);
+            json_chunk_end = Some(chunk_data_end);
+        }
+
+        offset = chunk_data_end;
+        if offset == bytes.len() {
+            break;
+        }
+    }
+
+    if !saw_json {
+        return Err(AvatarError::InvalidFormat(
+            "GLB does not contain a JSON chunk".to_string(),
+        ));
+    }
+
+    let json_start = json_chunk_start.unwrap_or(0);
+    let json_end = json_chunk_end.unwrap_or(bytes.len());
+    let json_bytes = &bytes[json_start..json_end];
+    validate_json_document(json_bytes)
+}
+
+fn validate_json_gltf_bytes(bytes: &[u8]) -> AvatarResult<()> {
+    validate_json_document(bytes)
+}
+
+fn validate_json_document(bytes: &[u8]) -> AvatarResult<()> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|err| AvatarError::Parse(format!("JSON parse failed: {err}")))?;
+
+    let asset = value
+        .get("asset")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            AvatarError::InvalidFormat("JSON lacks an 'asset' object".to_string())
+        })?;
+
+    let version = asset
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            AvatarError::InvalidFormat("JSON asset.version is missing or not a string".to_string())
+        })?;
+
+    if version != "2.0" {
+        return Err(AvatarError::InvalidFormat(format!(
+            "unsupported glTF asset.version: {version}; expected 2.0"
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn validate_hierarchy(hierarchy: &BoneHierarchy) -> ValidationReport {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    for (bone_id, bone) in &hierarchy.bones {
+        if let Some(parent_id) = &bone.parent_id {
+            if !hierarchy.bones.contains_key(parent_id) {
+                errors.push(format!(
+                    "Bone '{}' references non-existent parent '{}'",
+                    bone_id, parent_id
+                ));
+            }
+        }
+    }
+
+    for (bone_id, _) in &hierarchy.bones {
+        if has_circular_reference(hierarchy, bone_id) {
+            errors.push(format!("Circular reference detected in bone '{}'", bone_id));
+        }
+    }
+
+    if hierarchy.root_ids.is_empty() {
+        warnings.push("Hierarchy has no root bones".to_string());
+    }
+
+    let root_count = hierarchy.root_ids.len();
+    let bone_count = hierarchy.bones.len();
+    let leaf_count = hierarchy
+        .bones
+        .values()
+        .filter(|bone| hierarchy.get_children(&bone.id).is_empty())
+        .count();
+    let branch_count = hierarchy
+        .bones
+        .values()
+        .filter(|bone| hierarchy.get_children(&bone.id).len() > 1)
+        .count();
+
+    let stats = ValidationStats {
+        bone_count,
+        root_count,
+        leaf_count,
+        branch_count,
+    };
+
+    ValidationReport {
+        is_valid: errors.is_empty(),
+        errors,
+        warnings,
+        stats,
+    }
+}
+
+fn has_circular_reference(hierarchy: &BoneHierarchy, start_id: &str) -> bool {
+    let mut visited = std::collections::HashSet::new();
+    let mut stack = vec![start_id.to_string()];
+
+    while let Some(current) = stack.pop() {
+        if visited.contains(&current) {
+            return true;
+        }
+        visited.insert(current.clone());
+
+        if let Some(bone) = hierarchy.get_bone(&current) {
+            if let Some(parent_id) = &bone.parent_id {
+                stack.push(parent_id.clone());
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bone::{Bone, BoneHierarchy, BoneType};
-    use crate::material::Material;
-    use crate::mesh::Mesh;
-    use crate::pose::Pose;
+    use crate::bone::{Bone, BoneType};
 
     #[test]
-    fn test_avatar_creation() {
-        let avatar = Avatar::new("Test Avatar".to_string());
-        assert_eq!(avatar.name, "Test Avatar");
+    fn test_valid_hierarchy() {
+        let mut hierarchy = BoneHierarchy::new("Test".to_string());
+        let bone = Bone::new("Root".to_string(), None, BoneType::Armature);
+        hierarchy.add_bone(bone);
+
+        let report = validate_hierarchy(&hierarchy);
+        assert!(report.is_valid);
+        assert_eq!(report.stats.bone_count, 1);
     }
 
     #[test]
-    fn test_avatar_metadata() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        avatar.set_author("Author Name".to_string());
-        assert_eq!(avatar.metadata.author, Some("Author Name".to_string()));
+    fn test_validate_json_gltf_bytes() {
+        let json = br#"{"asset":{"version":"2.0"}}"#;
+        assert!(validate_json_gltf_bytes(json).is_ok());
     }
 
     #[test]
-    fn test_avatar_skeleton() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        let skeleton = BoneHierarchy::new("Skeleton".to_string());
-        avatar.set_skeleton(skeleton);
-
-        assert!(avatar.get_skeleton().is_some());
+    fn test_validate_invalid_asset_version() {
+        let json = br#"{"asset":{"version":"1.0"}}"#;
+        assert!(validate_json_gltf_bytes(json).is_err());
     }
 
     #[test]
-    fn test_avatar_meshes() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        let mesh = Mesh::new("Head".to_string());
+    fn test_validate_glb_accepts_valid_header() {
+        let mut bytes = vec![0u8; 12 + 8 + 8];
+        bytes[0..4].copy_from_slice(b"glTF");
+        bytes[4..8].copy_from_slice(&(2u32).to_le_bytes());
+        bytes[8..12].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+        bytes[12..16].copy_from_slice(&(8u32).to_le_bytes());
+        bytes[16..20].copy_from_slice(b"JSON");
+        bytes[20..].fill(b' ');
 
-        avatar.add_mesh(mesh.clone());
-        assert_eq!(avatar.meshes.len(), 1);
-        assert!(avatar.get_mesh(&mesh.id).is_some());
-    }
+        let payload = br#"{"asset":{"version":"2.0"}}"#;
+        let payload_len = payload.len() as u32;
+        bytes[12..16].copy_from_slice(&payload_len.to_le_bytes());
+        bytes[20..20 + payload.len()].copy_from_slice(payload);
 
-    #[test]
-    fn test_avatar_materials() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        let material = Material::new("Skin".to_string());
-
-        avatar.add_material(material.clone());
-        assert_eq!(avatar.materials.len(), 1);
-        assert!(avatar.get_material(&material.id).is_some());
-    }
-
-    #[test]
-    fn test_avatar_poses() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        let pose = Pose::new("Idle".to_string());
-
-        avatar.add_pose(pose);
-        assert_eq!(avatar.poses.len(), 1);
-        assert!(avatar.get_pose("Idle").is_some());
-    }
-
-    #[test]
-    fn test_avatar_statistics() {
-        let mut avatar = Avatar::new("Test Avatar".to_string());
-        let mut mesh = Mesh::new("Head".to_string());
-        mesh.add_vertex(0.0, 0.0, 0.0);
-        mesh.add_vertex(1.0, 0.0, 0.0);
-        mesh.add_vertex(0.0, 1.0, 0.0);
-        mesh.add_face(0, 1, 2);
-
-        avatar.add_mesh(mesh);
-        avatar.add_material(Material::new("Skin".to_string()));
-
-        let stats = avatar.get_statistics();
-        assert_eq!(stats.mesh_count, 1);
-        assert_eq!(stats.material_count, 1);
-        assert_eq!(stats.total_vertices, 3);
-        assert_eq!(stats.total_faces, 1);
+        assert!(validate_glb_bytes(&bytes).is_ok());
     }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "vp-avatar"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust-based VRM avatar handling library for VRoid avatars"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.9", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.10"
